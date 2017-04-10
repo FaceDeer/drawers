@@ -45,6 +45,8 @@ function drawers.drawer_on_construct(pos)
 
 	-- meta
 	local meta = core.get_meta(pos)
+	local inv = meta:get_inventory()
+	inv:set_size("main", drawerType)
 
 	local i = 1
 	while i <= drawerType do
@@ -124,6 +126,52 @@ function drawers.drawer_insert_object(pos, node, stack, direction)
 	return leftover
 end
 
+function drawers.allow_metadata_inventory_put(pos, listname, index, stack, player)
+	if listname ~= "main" then return 0 end
+	local drawer_visuals = drawers.drawer_visuals[core.serialize(pos)]
+	if not drawer_visuals or not drawer_visuals[index] then return 0 end
+	
+	local visual = drawer_visuals[index]
+	return visual.can_insert_stack(visual, stack, true)	
+end
+
+function drawers.allow_metadata_inventory_take(pos, listname, index, stack, player)
+	if listname ~= "main" then return 0 end
+	local drawer_visuals = drawers.drawer_visuals[core.serialize(pos)]
+	if not drawer_visuals or not drawer_visuals[index] then return 0 end
+	
+	local visual = drawer_visuals[index]
+	if visual.itemName ~= stack:get_name() then return 0 end
+	
+	if stack:get_count() > self.count then
+		return self.count
+	else
+		return stack:get_count()
+	end	
+end
+
+function drawers.on_metadata_inventory_put(pos, listname, index, stack, player)
+	if listname ~= "main" then return end
+	local drawer_visuals = drawers.drawer_visuals[core.serialize(pos)]
+	if not drawer_visuals or not drawer_visuals[index] then return end
+
+	local visual = drawer_visuals[index]
+	local meta = core.get_meta(pos)
+	visual.count = visual.count + stack:get_count()
+	visual.saveMetaData(visual, meta)	
+end
+
+function drawers.on_metadata_inventory_take(pos, listname, index, stack, player)
+	if listname ~= "main" then return end
+	local drawer_visuals = drawers.drawer_visuals[core.serialize(pos)]
+	if not drawer_visuals or not drawer_visuals[index] then return end
+
+	local visual = drawer_visuals[index]
+	local meta = core.get_meta(pos)
+	visual.count = visual.count - stack:get_count()
+	visual.saveMetaData(visual, meta)
+end
+
 function drawers.register_drawer(name, def)
 	def.description = def.description or "Wooden"
 	def.drawtype = "nodebox"
@@ -140,6 +188,11 @@ function drawers.register_drawer(name, def)
 	def.on_construct = drawers.drawer_on_construct
 	def.on_destruct = drawers.drawer_on_destruct
 	def.on_dig = drawers.drawer_on_dig
+	
+	def.allow_metadata_inventory_put = drawers.allow_metadata_inventory_put 
+	def.allow_metadata_inventory_take = drawers.allow_metadata_inventory_take 
+	def.on_metadata_inventory_put = drawers.on_metadata_inventory_put 
+	def.on_metadata_inventory_take = drawers.on_metadata_inventory_take 
 
 	if minetest.get_modpath("screwdriver") and screwdriver then
 		def.on_rotate = def.on_rotate or screwdriver.disallow
@@ -168,6 +221,14 @@ function drawers.register_drawer(name, def)
 		def1.groups.drawer = 1
 		core.register_node(name .. "1", def1)
 		core.register_alias(name, name .. "1") -- 1x1 drawer is the default one
+		
+		if minetest.get_modpath("hopper") then
+			hopper:add_container({
+				{"top", name .. "1", "main"},
+				{"bottom", name .. "1", "main"},
+				{"side", name .. "1", "main"},
+			})
+		end
 	end
 
 	if drawers.enable_1x2 then
@@ -180,6 +241,14 @@ function drawers.register_drawer(name, def)
 		def2.tiles4 = nil
 		def2.groups.drawer = 2
 		core.register_node(name .. "2", def2)
+		
+		if minetest.get_modpath("hopper") then
+			hopper:add_container({
+				{"top", name .. "2", "main"},
+				{"bottom", name .. "2", "main"},
+				{"side", name .. "2", "main"},
+			})
+		end
 	end
 
 	if drawers.enable_2x2 then
@@ -192,6 +261,14 @@ function drawers.register_drawer(name, def)
 		def4.tiles4 = nil
 		def4.groups.drawer = 4
 		core.register_node(name .. "4", def4)
+		
+		if minetest.get_modpath("hopper") then
+			hopper:add_container({
+				{"top", name .. "4", "main"},
+				{"bottom", name .. "4", "main"},
+				{"side", name .. "4", "main"},
+			})
+		end
 	end
 
 	if (not def.no_craft) and def.material then

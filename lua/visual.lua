@@ -168,6 +168,14 @@ core.register_entity("drawers:visual", {
 		inv:add_item("main", stack)
 		self.count = self.count - removeCount
 		meta:set_int("count"..self.visualId, self.count)
+		
+		-- update "dummy" inventory to allow other mods to interact with this drawer
+		local inventory_index = 1
+		if self.visualId ~= "" then
+			inventory_index = tonumber(self.visualId)
+		end
+		local inv = meta:get_inventory()
+		inv:set_stack("main", inventory_index, ItemStack{name=self.itemName, count=math.min(self.count, self.itemStackMax)})				
 
 		-- update infotext
 		local itemDescription = ""
@@ -192,72 +200,60 @@ core.register_entity("drawers:visual", {
 		})
 	end,
 
-	try_insert_stack = function(self, itemstack, insert_stack)
+	can_insert_stack = function(self, itemstack, insert_stack)
+		local stackMax = itemstack:get_stack_max()
 		local stackCount = itemstack:get_count()
 		local stackName = itemstack:get_name()
 
+		if stackMax == 1 then return 0 end -- don't allow items with max stack of 1
 		-- if nothing to be added, return
-		if stackCount <= 0 then return itemstack end
+		if stackCount <= 0 then return 0 end
 		-- if no itemstring, return
-		if stackName == "" then return itemstack end
+		if stackName == "" then return 0 end
 
 		-- only add one, if player holding sneak key
 		if not insert_stack then
 			stackCount = 1
 		end
 
+		local maxCount = stackMax * self.stackMaxFactor
+		
 		-- if current itemstring is not empty
 		if self.itemName ~= "" then
 			-- check if same item
-			if stackName ~= self.itemName then return itemstack end
-		else -- is empty
-			self.itemName = stackName
-			self.count = 0
-
-			-- get new stack max
-			self.itemStackMax = ItemStack(self.itemName):get_stack_max()
-			self.maxCount = self.itemStackMax * self.stackMaxFactor
-
-			-- Don't add items stackable only to 1
-			if self.itemStackMax == 1 then
-				return itemstack
-			end
+			if stackName ~= self.itemName then return 0 end
 		end
 
-		-- set new counts:
-		-- if new count is more than max_count
-		if (self.count + stackCount) > self.maxCount then
-			itemstack:set_count(self.count + stackCount - self.maxCount)
-			self.count = self.maxCount
-		else -- new count fits
-			self.count = self.count + stackCount
-			-- this is for only removing one
-			itemstack:set_count(itemstack:get_count() - stackCount)
-		end
+		-- Either we're empty or we've got some of the same item already in here, we can add this.
+		return math.min(stackCount, maxCount - self.count)
+	end,
+	
+	try_insert_stack = function(self, itemstack, insert_stack)
+		local allowedCount = self.can_insert_stack(self, itemstack, insert_stack)
+		if allowedCount == 0 then return itemstack end
+		
+		-- ensure we've got the correct values
+		-- in case we're adding an item to an empty drawer slot
+		self.itemName = itemstack:get_name()
+		self.itemStackMax = itemstack:get_stack_max()
+		self.maxCount = self.itemStackMax * self.stackMaxFactor
+	
+		-- set new counts
+		self.count = self.count + allowedCount
+		itemstack:take_item(allowedCount)
 
 		-- get meta
 		local meta = core.get_meta(self.drawer_pos)
 
-		-- update infotext
-		local itemDescription
-		if core.registered_items[self.itemName] then
-			itemDescription = core.registered_items[self.itemName].description
-		else
-			itemDescription = "Empty"
-		end
-		local infotext = drawers.gen_info_text(itemDescription,
-			self.count, self.stackMaxFactor, self.itemStackMax)
-		meta:set_string("entity_infotext"..self.visualId, infotext)
-
+		self.saveMetaData(self, meta)
+		
 		-- texture
 		self.texture = drawers.get_inv_image(self.itemName)
 
 		self.object:set_properties({
-			infotext = infotext .. "\n\n\n\n\n",
+			infotext = meta:get_string("entity_infotext"..self.visualId) .. "\n\n\n\n\n",
 			textures = {self.texture}
 		})
-
-		self.saveMetaData(self, meta)
 
 		if itemstack:get_count() == 0 then itemstack = ItemStack("") end
 		return itemstack
@@ -269,6 +265,26 @@ core.register_entity("drawers:visual", {
 		meta:set_int("max_count"..self.visualId, self.maxCount)
 		meta:set_int("base_stack_max"..self.visualId, self.itemStackMax)
 		meta:set_int("stack_max_factor"..self.visualId, self.stackMaxFactor)
+		
+		-- update infotext
+		local itemDescription
+		if core.registered_items[self.itemName] then
+			itemDescription = core.registered_items[self.itemName].description
+		else
+			itemDescription = "Empty"
+		end
+		local infotext = drawers.gen_info_text(itemDescription,
+			self.count, self.stackMaxFactor, self.itemStackMax)
+		meta:set_string("entity_infotext"..self.visualId, infotext)
+		
+		local inventory_index = 1
+		if self.visualId ~= "" then
+			inventory_index = tonumber(self.visualId)
+		end
+			
+		-- create a "dummy" inventory to allow other mods to interact with this drawer
+		local inv = meta:get_inventory()
+		inv:set_stack("main", inventory_index, ItemStack{name=self.itemName, count=math.min(self.count, self.itemStackMax)})		
 	end
 })
 
